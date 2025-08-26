@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <Servo.h>
+#include <ESP32Servo.h>
 #ifdef ESP32
 #include <WiFi.h>
 #include <AsyncTCP.h>
@@ -9,12 +9,11 @@
 #endif
 #include <ESPAsyncWebServer.h>
 
-enum Mode
-{
+enum Mode {
   REMOTE,
   AUTO
 };
-Mode currentMode = REMOTE;
+Mode currentMode = AUTO;
 
 #define UP 1
 #define DOWN 2
@@ -30,48 +29,43 @@ Mode currentMode = REMOTE;
 #define REMOTE_MODE 12
 #define STOP 0
 
-#define FRONT_RIGHT_MOTOR 0
-#define BACK_RIGHT_MOTOR 1
-#define FRONT_LEFT_MOTOR 2
-#define BACK_LEFT_MOTOR 3
-#define FRONT_MOTOR_SPEED_PIN 32
-#define BACK_MOTOR_SPEED_PIN 34
+#define RIGHT_MOTORS 0
+#define LEFT_MOTORS 1
+#define RIGHT_MOTOR_SPEED_PIN 18
+#define LEFT_MOTOR_SPEED_PIN 19
+#define SPEED 100
 
 #define FORWARD 1
 #define BACKWARD -1
 
 // for ultrasonic sensor
-#define TRIGGER_PIN 12
-#define ECHO_PIN 13
+#define TRIGGER_PIN 2
+#define ECHO_PIN 4
 float duration, distance;
 
 // for servo
-#define SERVO_PIN 14
+#define SERVO_PIN 32
 
-struct MOTOR_PINS
-{
+struct MOTOR_PINS {
   int pinIN1;
   int pinIN2;
 };
 
-struct ObstacleScan
-{
-  int distancemap[3]; // 0 = front, 1 = left, 2 = right
-  int ObstacleMap[3]; // 1 = obstacle, 0 = free
+struct ObstacleScan {
+  int distancemap[3];  // 0 = front, 1 = left, 2 = right
+  int ObstacleMap[3];  // 1 = obstacle, 0 = free
 };
 
 Servo Robotservo;
 
-std::vector<MOTOR_PINS> motorPins =
-    {
-        {25, 33}, // FRONT_RIGHT_MOTOR
-        {27, 26}, // FRONT_LEFT_MOTOR
-        {18, 19}, // BACK_RIGHT_MOTOR
-        {16, 17}, // BACK_LEFT_MOTOR
+std::vector<MOTOR_PINS> motorPins = {
+  { 25, 33 },  // RIGHT_MOTORS
+  { 27, 26 },  // LEFT_MOTORS
+
 };
 
-const char *ssid = "MyWiFiCar";
-const char *password = "12345678";
+const char *ssid = "Pet";
+const char *password = "123456789";
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -170,148 +164,110 @@ const char *htmlHomePage PROGMEM = R"HTMLHOMEPAGE(
 
 )HTMLHOMEPAGE";
 
-void rotateMotor(int motorNumber, int motorDirection)
-{
-  if (motorDirection == FORWARD)
-  {
-    digitalWrite(motorPins[motorNumber].pinIN1, HIGH);
-    digitalWrite(motorPins[motorNumber].pinIN2, LOW);
-    analogWrite(FRONT_MOTOR_SPEED_PIN, 100);
-    analogWrite(BACK_MOTOR_SPEED_PIN, 100);
-  }
-  else if (motorDirection == BACKWARD)
-  {
+void rotateMotor(int motorNumber, int motorDirection) {
+  if (motorDirection == FORWARD) {
     digitalWrite(motorPins[motorNumber].pinIN1, LOW);
     digitalWrite(motorPins[motorNumber].pinIN2, HIGH);
-    analogWrite(FRONT_MOTOR_SPEED_PIN, 100);
-    analogWrite(BACK_MOTOR_SPEED_PIN, 100);
-  }
-  else
-  {
+    analogWrite(RIGHT_MOTOR_SPEED_PIN, SPEED);
+    analogWrite(LEFT_MOTOR_SPEED_PIN, SPEED);
+  } else if (motorDirection == BACKWARD) {
+    digitalWrite(motorPins[motorNumber].pinIN1, HIGH);
+    digitalWrite(motorPins[motorNumber].pinIN2, LOW);
+    analogWrite(RIGHT_MOTOR_SPEED_PIN, SPEED);
+    analogWrite(LEFT_MOTOR_SPEED_PIN, SPEED);
+  } else {
     digitalWrite(motorPins[motorNumber].pinIN1, LOW);
     digitalWrite(motorPins[motorNumber].pinIN2, LOW);
-    analogWrite(FRONT_MOTOR_SPEED_PIN, 0);
-    analogWrite(BACK_MOTOR_SPEED_PIN, 0);
+    analogWrite(RIGHT_MOTOR_SPEED_PIN, SPEED);
+    analogWrite(LEFT_MOTOR_SPEED_PIN, SPEED);
   }
 }
 
-void processCarMovement(String inputValue)
-{
+void processCarMovement(String inputValue) {
   Serial.printf("Got value as %s %d\n", inputValue.c_str(), inputValue.toInt());
-  switch (inputValue.toInt())
-  {
+  switch (inputValue.toInt()) {
 
-  case UP:
-    rotateMotor(FRONT_RIGHT_MOTOR, FORWARD);
-    rotateMotor(BACK_RIGHT_MOTOR, FORWARD);
-    rotateMotor(FRONT_LEFT_MOTOR, FORWARD);
-    rotateMotor(BACK_LEFT_MOTOR, FORWARD);
-    break;
+    case UP:
+      rotateMotor(RIGHT_MOTORS, FORWARD);
+      rotateMotor(LEFT_MOTORS, FORWARD);
+      break;
 
-  case DOWN:
-    rotateMotor(FRONT_RIGHT_MOTOR, BACKWARD);
-    rotateMotor(BACK_RIGHT_MOTOR, BACKWARD);
-    rotateMotor(FRONT_LEFT_MOTOR, BACKWARD);
-    rotateMotor(BACK_LEFT_MOTOR, BACKWARD);
-    break;
+    case DOWN:
+      rotateMotor(RIGHT_MOTORS, BACKWARD);
+      rotateMotor(LEFT_MOTORS, BACKWARD);
+      break;
 
-  case LEFT:
-    rotateMotor(FRONT_RIGHT_MOTOR, FORWARD);
-    rotateMotor(BACK_RIGHT_MOTOR, BACKWARD);
-    rotateMotor(FRONT_LEFT_MOTOR, BACKWARD);
-    rotateMotor(BACK_LEFT_MOTOR, FORWARD);
-    break;
+    case LEFT:
+      rotateMotor(RIGHT_MOTORS, BACKWARD);
+      rotateMotor(LEFT_MOTORS, FORWARD);
+      break;
 
-  case RIGHT:
-    rotateMotor(FRONT_RIGHT_MOTOR, BACKWARD);
-    rotateMotor(BACK_RIGHT_MOTOR, FORWARD);
-    rotateMotor(FRONT_LEFT_MOTOR, FORWARD);
-    rotateMotor(BACK_LEFT_MOTOR, BACKWARD);
-    break;
+    case RIGHT:
+      rotateMotor(RIGHT_MOTORS, FORWARD);
+      rotateMotor(LEFT_MOTORS, BACKWARD);
+      break;
 
-  case UP_LEFT:
-    rotateMotor(FRONT_RIGHT_MOTOR, FORWARD);
-    rotateMotor(BACK_RIGHT_MOTOR, STOP);
-    rotateMotor(FRONT_LEFT_MOTOR, STOP);
-    rotateMotor(BACK_LEFT_MOTOR, FORWARD);
-    break;
+    case UP_LEFT:
+      rotateMotor(RIGHT_MOTORS, STOP);
+      rotateMotor(LEFT_MOTORS, FORWARD);
+      break;
 
-  case UP_RIGHT:
-    rotateMotor(FRONT_RIGHT_MOTOR, STOP);
-    rotateMotor(BACK_RIGHT_MOTOR, FORWARD);
-    rotateMotor(FRONT_LEFT_MOTOR, FORWARD);
-    rotateMotor(BACK_LEFT_MOTOR, STOP);
-    break;
+    case UP_RIGHT:
+      rotateMotor(RIGHT_MOTORS, FORWARD);
+      rotateMotor(LEFT_MOTORS, STOP);
+      break;
 
-  case DOWN_LEFT:
-    rotateMotor(FRONT_RIGHT_MOTOR, STOP);
-    rotateMotor(BACK_RIGHT_MOTOR, BACKWARD);
-    rotateMotor(FRONT_LEFT_MOTOR, BACKWARD);
-    rotateMotor(BACK_LEFT_MOTOR, STOP);
-    break;
+    case DOWN_LEFT:
+      rotateMotor(RIGHT_MOTORS, STOP);
+      rotateMotor(LEFT_MOTORS, BACKWARD);
+      break;
 
-  case DOWN_RIGHT:
-    rotateMotor(FRONT_RIGHT_MOTOR, BACKWARD);
-    rotateMotor(BACK_RIGHT_MOTOR, STOP);
-    rotateMotor(FRONT_LEFT_MOTOR, STOP);
-    rotateMotor(BACK_LEFT_MOTOR, BACKWARD);
-    break;
+    case DOWN_RIGHT:
+      rotateMotor(RIGHT_MOTORS, BACKWARD);
+      rotateMotor(LEFT_MOTORS, STOP);
+      break;
 
-  case TURN_LEFT:
-    rotateMotor(FRONT_RIGHT_MOTOR, FORWARD);
-    rotateMotor(BACK_RIGHT_MOTOR, FORWARD);
-    rotateMotor(FRONT_LEFT_MOTOR, BACKWARD);
-    rotateMotor(BACK_LEFT_MOTOR, BACKWARD);
-    break;
+    case TURN_LEFT:
+      rotateMotor(RIGHT_MOTORS, BACKWARD);
+      rotateMotor(LEFT_MOTORS, FORWARD);
+      break;
 
-  case TURN_RIGHT:
-    rotateMotor(FRONT_RIGHT_MOTOR, BACKWARD);
-    rotateMotor(BACK_RIGHT_MOTOR, BACKWARD);
-    rotateMotor(FRONT_LEFT_MOTOR, FORWARD);
-    rotateMotor(BACK_LEFT_MOTOR, FORWARD);
-    break;
+    case TURN_RIGHT:
+      rotateMotor(RIGHT_MOTORS, FORWARD);
+      rotateMotor(LEFT_MOTORS, BACKWARD);
+      break;
 
-  case STOP:
-    rotateMotor(FRONT_RIGHT_MOTOR, STOP);
-    rotateMotor(BACK_RIGHT_MOTOR, STOP);
-    rotateMotor(FRONT_LEFT_MOTOR, STOP);
-    rotateMotor(BACK_LEFT_MOTOR, STOP);
-    break;
+    case STOP:
+      rotateMotor(RIGHT_MOTORS, STOP);
+      rotateMotor(LEFT_MOTORS, STOP);
+      break;
 
-  case AUTO_MODE:
-    currentMode = AUTO;
-    Serial.println("Switched to AUTO mode");
-    rotateMotor(FRONT_RIGHT_MOTOR, STOP);
-    rotateMotor(BACK_RIGHT_MOTOR, STOP);
-    rotateMotor(FRONT_LEFT_MOTOR, STOP);
-    rotateMotor(BACK_LEFT_MOTOR, STOP);
-    break;
+    case AUTO_MODE:
+      currentMode = AUTO;
+      Serial.println("Switched to AUTO mode");
+      rotateMotor(RIGHT_MOTORS, STOP);
+      rotateMotor(LEFT_MOTORS, STOP);
+      break;
 
-  case REMOTE_MODE:
-    currentMode = REMOTE;
-    Serial.println("Switched to REMOTE mode");
-    rotateMotor(FRONT_RIGHT_MOTOR, STOP);
-    rotateMotor(BACK_RIGHT_MOTOR, STOP);
-    rotateMotor(FRONT_LEFT_MOTOR, STOP);
-    rotateMotor(BACK_LEFT_MOTOR, STOP);
-    break;
+    case REMOTE_MODE:
+      currentMode = REMOTE;
+      Serial.println("Switched to REMOTE mode");
+      rotateMotor(RIGHT_MOTORS, STOP);
+      rotateMotor(LEFT_MOTORS, STOP);
+      break;
 
-  default:
-    rotateMotor(FRONT_RIGHT_MOTOR, STOP);
-    rotateMotor(BACK_RIGHT_MOTOR, STOP);
-    rotateMotor(FRONT_LEFT_MOTOR, STOP);
-    rotateMotor(BACK_LEFT_MOTOR, STOP);
-    break;
+    default:
+      rotateMotor(RIGHT_MOTORS, STOP);
+      rotateMotor(LEFT_MOTORS, STOP);
+      break;
   }
 }
 
-void handleRoot(AsyncWebServerRequest *request)
-{
+void handleRoot(AsyncWebServerRequest *request) {
   request->send_P(200, "text/html", htmlHomePage);
 }
 
-void handleNotFound(AsyncWebServerRequest *request)
-{
+void handleNotFound(AsyncWebServerRequest *request) {
   request->send(404, "text/plain", "File Not Found");
 }
 
@@ -320,44 +276,36 @@ void onWebSocketEvent(AsyncWebSocket *server,
                       AwsEventType type,
                       void *arg,
                       uint8_t *data,
-                      size_t len)
-{
-  switch (type)
-  {
-  case WS_EVT_CONNECT:
-    Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
-    // client->text(getRelayPinsStatusJson(ALL_RELAY_PINS_INDEX));
-    break;
-  case WS_EVT_DISCONNECT:
-    Serial.printf("WebSocket client #%u disconnected\n", client->id());
-    processCarMovement("0");
-    break;
-  case WS_EVT_DATA:
-    if (currentMode == REMOTE)
-    {
+                      size_t len) {
+  switch (type) {
+    case WS_EVT_CONNECT:
+      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      // client->text(getRelayPinsStatusJson(ALL_RELAY_PINS_INDEX));
+      break;
+    case WS_EVT_DISCONNECT:
+      Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      processCarMovement("0");
+      break;
+    case WS_EVT_DATA:
       AwsFrameInfo *info;
       info = (AwsFrameInfo *)arg;
-      if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT)
-      {
+      if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
         std::string myData = "";
         myData.assign((char *)data, len);
         processCarMovement(myData.c_str());
       }
-    }
-    break;
+      break;
 
-  case WS_EVT_PONG:
-  case WS_EVT_ERROR:
-    break;
-  default:
-    break;
+    case WS_EVT_PONG:
+    case WS_EVT_ERROR:
+      break;
+    default:
+      break;
   }
 }
 
-void setUpPinModes()
-{
-  for (int i = 0; i < motorPins.size(); i++)
-  {
+void setUpPinModes() {
+  for (int i = 0; i < motorPins.size(); i++) {
     pinMode(motorPins[i].pinIN1, OUTPUT);
     pinMode(motorPins[i].pinIN2, OUTPUT);
     rotateMotor(i, STOP);
@@ -365,85 +313,96 @@ void setUpPinModes()
 
   pinMode(TRIGGER_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
-  Robotservo.attach(SERVO_PIN);
-  Robotservo.write(90); // Set servo to neutral position
+
+  // Allow allocation of all timers
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+  Robotservo.setPeriodHertz(50);            // Standard 50hz servo
+  Robotservo.attach(SERVO_PIN, 250, 3000);  // attaches the servo on pin 18 to the servo object
+  Robotservo.write(90);                     // Set servo to neutral position
+  delay(2000);
 }
 
-long measureDistance()
-{
+long measureDistance() {
   digitalWrite(TRIGGER_PIN, LOW);
   delayMicroseconds(2);
   digitalWrite(TRIGGER_PIN, HIGH);
   delayMicroseconds(10);
   digitalWrite(TRIGGER_PIN, LOW);
-  long duration = pulseIn(ECHO_PIN, HIGH, 20000); // 20ms timeout
-  long distance = duration * 0.034 / 2;           // cm
+  long duration = pulseIn(ECHO_PIN, HIGH);  // 20ms timeout
+  long distance = duration * 0.0344 / 2;    // cm
+  Serial.printf("\ndistance found: %d cm\n", distance);
   return distance;
 }
 
-ObstacleScan isObstacleAhead()
-{
+bool checkFrontObstacle() {
+  Robotservo.write(90);
+  delay(200);
+  distance = measureDistance();
+  if (distance < 20 && distance != 0) {
+    return 0;
+  } else {
+    return 1;
+  }
+}
+
+ObstacleScan isObstacleAhead() {
   ObstacleScan scanResult;
 
   // ---- Check Left ----
   Robotservo.write(45);
-  delay(100);
+  Serial.println("Moveing servo to 45 deg");
+  delay(1000);
   scanResult.distancemap[1] = measureDistance();
   scanResult.ObstacleMap[1] = (scanResult.distancemap[1] < 20) ? 1 : 0;
 
   // ---- Check Front ----
   Robotservo.write(90);
-  delay(100);
+  Serial.println("Moveing servo to 90 deg");
+  delay(1000);
   scanResult.distancemap[0] = measureDistance();
   scanResult.ObstacleMap[0] = (scanResult.distancemap[0] < 20) ? 1 : 0;
 
   // ---- Check Right ----
-  Robotservo.write(135);
-  delay(100);
+  Robotservo.write(150);
+  Serial.println("Moveing servo to 135 deg");
+  delay(1000);
   scanResult.distancemap[2] = measureDistance();
   scanResult.ObstacleMap[2] = (scanResult.distancemap[2] < 20) ? 1 : 0;
 
   return scanResult;
 }
 
-void runAutonomous()
-{
-  ObstacleScan scan = isObstacleAhead();
-
+void runAutonomous() {
   // Example: print results
-  Serial.printf("Front: %dcm | Left: %dcm | Right: %dcm\n",
-                scan.distancemap[0],
-                scan.distancemap[1],
-                scan.distancemap[2]);
-
-  if (scan.ObstacleMap[0] == 1)
-  {
-    // Obstacle ahead → move back + turn
-    processCarMovement("2"); // backward
-    delay(500);
-    processCarMovement("0");
-
-    if (scan.distancemap[1] > scan.distancemap[2])
-    {
-      processCarMovement("9"); // turn left
-      delay(400);
-    }
-    else
-    {
-      processCarMovement("10"); // turn right
-      delay(400);
-    }
-    processCarMovement("0");
-  }
-  else
-  {
-    // No obstacle ahead → go forward
+  bool isFrontSafe = checkFrontObstacle();
+  if (isFrontSafe) {
     processCarMovement("1");
+  } else {
+    processCarMovement("2");  // go back and stop
+    delay(200);
+    processCarMovement("0");
+
+    ObstacleScan scan = isObstacleAhead();
+
+    Serial.printf("Front: %dcm | Left: %dcm | Right: %dcm\n",
+                  scan.distancemap[0],
+                  scan.distancemap[1],
+                  scan.distancemap[2]);
+
+    if (scan.distancemap[1] > scan.distancemap[2]) {
+      processCarMovement("9");  // turn left
+      delay(400);
+    } else {
+      processCarMovement("10");  // turn right
+      delay(400);
+    }
   }
 }
 
-void setup(void)
-{
+void setup(void) {
   setUpPinModes();
   Serial.begin(115200);
 
@@ -462,12 +421,10 @@ void setup(void)
   Serial.println("HTTP server started");
 }
 
-void loop()
-{
+void loop() {
   ws.cleanupClients();
 
-  if (currentMode == AUTO)
-  {
+  if (currentMode == AUTO) {
     runAutonomous();
   }
 }
